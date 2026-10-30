@@ -1,0 +1,15 @@
+## .NET 构建产物
+bin/
+obj/
+dist/
+
+## Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+## 系统杂项
+Thumbs.db
+Desktop.ini
