@@ -39,6 +39,7 @@ public class MainForm : Form
     private int totalMs;
     private int? markStartMs;
     private int? markEndMs;
+    private bool _activeMarkerIsEnd;   // 最近触碰的标记（←/→ 微调目标）：true=终点，false=起点
     private DateTime lastSeek = DateTime.MinValue;
     private bool scrubbing;
     private bool previewing;
@@ -93,51 +94,6 @@ public class MainForm : Form
             SetBounds(0, 0, e.SuggestedRectangle.Width, e.SuggestedRectangle.Height, BoundsSpecified.Size);
         UpdateMinimumSize();
         LayoutUi();
-    }
-
-    // 系统菜单图标连点导致程序退出的拦截：
-    // 第一次点击后 Windows 进入菜单模态循环，WM_NCLBUTTONDBLCLK 不一定送达窗体，
-    // 关闭指令由菜单循环直接以 WM_SYSCOMMAND/SC_CLOSE 发出，因此必须在 WM_SYSCOMMAND 层拦截。
-    // 判定：SC_CLOSE 来自图标点击（2 秒内）且期间没有任何菜单项被高亮（用户未真正选择菜单项）→ 吞掉。
-    // 菜单里手动选择"关闭"（鼠标悬停/键盘方向键都会触发 WM_MENUSELECT）、X 按钮、Alt+F4 均不受影响。
-    private const int WM_NCLBUTTONDOWN = 0x00A1;
-    private const int WM_NCLBUTTONDBLCLK = 0x00A3;
-    private const int WM_SYSCOMMAND = 0x0112;
-    private const int WM_MENUSELECT = 0x011F;
-    private const int WM_ENTERMENULOOP = 0x0211;
-    private const int HTSYSMENU = 3;
-    private const int SC_CLOSE = 0xF060;
-
-    private int _lastNcHit;
-    private DateTime _lastIconClickUtc = DateTime.MinValue;
-    private bool _sysMenuItemHighlighted;
-
-    protected override void WndProc(ref Message m)
-    {
-        switch (m.Msg)
-        {
-            case WM_NCLBUTTONDOWN:
-                _lastNcHit = (int)m.WParam;
-                if (_lastNcHit == HTSYSMENU) _lastIconClickUtc = DateTime.UtcNow;
-                break;
-            case WM_NCLBUTTONDBLCLK when (int)m.WParam == HTSYSMENU:
-                return; // 图标双击消息本身不交给系统默认处理
-            case WM_ENTERMENULOOP:
-                _sysMenuItemHighlighted = false; // 菜单刚打开，重置"有项被高亮"
-                break;
-            case WM_MENUSELECT:
-                // 高亮真实菜单项才置位（lParam==0 且 fuFlags==0xFFFF 是菜单关闭通知，排除）
-                if (m.LParam != IntPtr.Zero || ((int)m.WParam >> 16) != 0xFFFF)
-                    _sysMenuItemHighlighted = true;
-                break;
-            case WM_SYSCOMMAND when ((int)m.WParam & 0xFFF0) == SC_CLOSE:
-                if (_lastNcHit == HTSYSMENU
-                    && !_sysMenuItemHighlighted
-                    && (DateTime.UtcNow - _lastIconClickUtc) < TimeSpan.FromSeconds(2))
-                    return; // 图标连点触发的意外关闭：吞掉
-                break;
-        }
-        base.WndProc(ref m);
     }
 
     // 最小尺寸 = 设计客户区(900x480) × 当前 DPI + 边框/标题栏厚度
@@ -471,6 +427,7 @@ public class MainForm : Form
     private void Track_MarkerDragging(object? sender, EventArgs e)
     {
         StopPreview();
+        _activeMarkerIsEnd = track.LastDraggedIsEnd;
         markStartMs = track.SelectionStart;
         markEndMs = track.SelectionEnd;
         UpdateMarkLabel();
@@ -571,12 +528,14 @@ public class MainForm : Form
                 return;
             }
             markEndMs = v;
+            _activeMarkerIsEnd = true;
         }
         else
         {
             // 当前是完整区间，点一下重新设起点
             markStartMs = track.Value;
             markEndMs = null;
+            _activeMarkerIsEnd = false;
         }
 
         UpdateMarkLabel();
@@ -616,11 +575,11 @@ public class MainForm : Form
         lblMark.Text = $"起点 {s}    终点 {e}    区间 {d}";
 
         if (markEndMs == null)
-            lblHint.Text = "已设置起点，请点击「结束标记」确定终点";
+            lblHint.Text = "已设置起点，请点击「结束标记」确定终点（←/→ 可微调起点）";
         else if (markStartMs == 0 && markEndMs == totalMs)
             lblHint.Text = "提示：当前为整段范围，导出整段音频；可拖动轨道上的标记把手设定区间";
         else
-            lblHint.Text = "提示：当前为手动标记范围，导出以该区间为准（可拖动标记把手微调）";
+            lblHint.Text = "提示：当前为手动标记范围，导出以该区间为准（可拖动标记把手，或按 ←/→ 微调，Shift/Ctrl 加速）";
     }
 
     private static string Fmt(int ms)
@@ -719,8 +678,51 @@ public class MainForm : Form
     }
 
     // ===== 快捷键 / 其它 =====
+    // 方向键微调最近触碰的标记：←/→ = ±10ms，Shift = ±100ms，Ctrl = ±1000ms
+    private void NudgeActiveMarker(int direction, int stepMs)
+    {
+        if (videoPath == null) return;
+        StopPreview();
+        int delta = direction * stepMs;
+        if (_activeMarkerIsEnd && markEndMs.HasValue)
+        {
+            markEndMs = Math.Clamp(markEndMs.Value + delta, (markStartMs ?? 0) + 1, totalMs);
+            SetStatus($"终点 {Fmt(markEndMs.Value)}", Theme.TextMuted);
+        }
+        else if (markStartMs.HasValue)
+        {
+            markStartMs = Math.Clamp(markStartMs.Value + delta, 0, (markEndMs ?? totalMs) - 1);
+            SetStatus($"起点 {Fmt(markStartMs.Value)}", Theme.TextMuted);
+        }
+        UpdateMarkLabel();
+        UpdateExportEnabled();
+    }
+
+    // 焦点落在窗体本身时（如拖放文件后还没点过任何控件），方向键也优先用于标记微调。
+    // 控件获得焦点时则由控件的 IsInputKey 放行，经 KeyPreview 走 MainForm_KeyDown。
+    protected override bool ProcessDialogKey(Keys keyData)
+    {
+        if ((keyData & Keys.KeyCode) is Keys.Left or Keys.Right && (keyData & Keys.Alt) == 0
+            && videoPath != null && (markStartMs.HasValue || markEndMs.HasValue))
+        {
+            int step = (keyData & Keys.Shift) != 0 ? 100 : (keyData & Keys.Control) != 0 ? 1000 : 10;
+            NudgeActiveMarker((keyData & Keys.KeyCode) == Keys.Right ? 1 : -1, step);
+            return true;
+        }
+        return base.ProcessDialogKey(keyData);
+    }
+
     private void MainForm_KeyDown(object? sender, KeyEventArgs e)
     {
+        if ((e.KeyCode == Keys.Left || e.KeyCode == Keys.Right) && !e.Alt
+            && videoPath != null && (markStartMs.HasValue || markEndMs.HasValue))
+        {
+            int step = e.Shift ? 100 : e.Control ? 1000 : 10;
+            NudgeActiveMarker(e.KeyCode == Keys.Right ? 1 : -1, step);
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            return;
+        }
         if (e.KeyCode == Keys.Space && !e.Control && !e.Alt) { TogglePlay(); e.Handled = true; return; }
         if (e.KeyCode == Keys.I && !e.Control)
         {
@@ -728,6 +730,7 @@ public class MainForm : Form
             {
                 markStartMs = track.Value;
                 markEndMs = null;
+                _activeMarkerIsEnd = false;
                 UpdateMarkLabel();
                 UpdateMarkButton();
                 UpdateExportEnabled();
@@ -739,6 +742,7 @@ public class MainForm : Form
             if (videoPath != null && markStartMs.HasValue && track.Value > markStartMs.Value)
             {
                 markEndMs = track.Value;
+                _activeMarkerIsEnd = true;
                 UpdateMarkLabel();
                 UpdateMarkButton();
                 UpdateExportEnabled();

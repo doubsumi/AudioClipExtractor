@@ -35,6 +35,13 @@ public class ModernButton : Button
     protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; Invalidate(); base.OnMouseDown(e); }
     protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
 
+    // 方向键交给表单做标记微调（KeyPreview → MainForm_KeyDown），不在按钮间做焦点导航
+    protected override bool IsInputKey(Keys keyData)
+    {
+        if ((keyData & Keys.KeyCode) is Keys.Left or Keys.Right) return true;
+        return base.IsInputKey(keyData);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaintBackground(e);
@@ -196,6 +203,9 @@ public class ModernTrackBar : Control
     public event EventHandler? MarkerDragging;
     public event EventHandler? MarkerDragEnded;
 
+    // 最近一次按下命中的标记：true=终点把手，false=起点把手（松手后保留，供键盘微调判断目标）
+    public bool LastDraggedIsEnd { get; private set; }
+
     public ModernTrackBar()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
@@ -343,6 +353,13 @@ public class ModernTrackBar : Control
         }
     }
 
+    // 方向键交给表单做标记微调（KeyPreview → MainForm_KeyDown），不做焦点导航
+    protected override bool IsInputKey(Keys keyData)
+    {
+        if ((keyData & Keys.KeyCode) is Keys.Left or Keys.Right) return true;
+        return base.IsInputKey(keyData);
+    }
+
     protected override void OnMouseDown(MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left) return;
@@ -350,6 +367,7 @@ public class ModernTrackBar : Control
         _dragPart = HitTestMarker(e.X);
         if (_dragPart != DragPart.None)
         {
+            LastDraggedIsEnd = _dragPart == DragPart.End;
             Cursor = Cursors.SizeWE;
             MoveMarkerTo(_dragPart, XToValue(e.X));
             MarkerDragging?.Invoke(this, EventArgs.Empty);
