@@ -4,7 +4,7 @@
 
 **视频 / 音频片段提取 + AI 音源分离的一体化 Windows 桌面工具**
 
-从任意媒体文件中截取音频片段、逐轨预览多音轨，并可将音频分离为人声 / 伴奏或四轨乐器 stems —— 全部在本地完成，无需 ffmpeg。
+从任意媒体文件中截取音频片段、逐轨预览多音轨，并可将音频分离为人声 / 伴奏或四轨乐器 stems —— 全部在本地完成，无需联网运行或其他本地环境依赖（首次使用AI分离功能需按指引下载模型文件）。
 
 ![.NET 8](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D4?logo=windows&logoColor=white)
