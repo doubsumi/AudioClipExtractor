@@ -16,6 +16,14 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
   </ItemGroup>
+
+  <!-- OnnxRuntime 包会带出 win-x64 的导入库（.lib），发布时无需分发 -->
+  <Target Name="ExcludeOnnxImportLibs" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.lib'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

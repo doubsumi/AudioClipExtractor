@@ -212,11 +212,11 @@ public class ModernTrackBar : Control
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
                  ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
-        Height = 48;
+        Height = 80; // 轨道靠下，上方留出拖动气泡 / 标记把手的空间
         Cursor = Cursors.Hand;
     }
 
-    private Rectangle TrackRect => new Rectangle(12, Height / 2 - 4, Width - 24, 8);
+    private Rectangle TrackRect => new Rectangle(12, Height - 22, Width - 24, 8);
 
     private int ValueToX(int v)
     {
@@ -272,7 +272,8 @@ public class ModernTrackBar : Control
 
         // 手柄
         int hr = (_dragPart == DragPart.Value || _hover) ? 8 : 6;
-        var handle = new Rectangle(vx - hr, Height / 2 - hr, hr * 2, hr * 2);
+        int cy = t.Top + t.Height / 2;
+        var handle = new Rectangle(vx - hr, cy - hr, hr * 2, hr * 2);
         using (var hb = new SolidBrush(Theme.Card)) g.FillEllipse(hb, handle);
         using (var hp = new Pen(Theme.Accent, 2)) g.DrawEllipse(hp, handle);
 
@@ -284,7 +285,7 @@ public class ModernTrackBar : Control
             int bw = size.Width + 16;
             int bh = size.Height + 8;
             int bx = Math.Clamp(vx - bw / 2, 0, Width - bw);
-            int by = t.Top - bh - 6;
+            int by = t.Top - bh - 20; // 留出标记把手的空间，避免气泡压住把手
             var bubble = new Rectangle(bx, by, bw, bh);
             using var bp = ModernButton.RoundRect(bubble, 6);
             using var bb = new SolidBrush(Theme.TextPrimary);
@@ -417,4 +418,600 @@ public class ModernTrackBar : Control
 
     protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+}
+
+/// <summary>音轨列表里的一行：整行点击=选中该音轨，右侧胶囊=单独预览该音轨。</summary>
+public class TrackRow : Control
+{
+    private static readonly Font TitleFont = new("Microsoft YaHei UI", 9.5F, FontStyle.Bold);
+    private static readonly Font DetailFont = new("Microsoft YaHei UI", 8.25F, FontStyle.Regular);
+    private static readonly Font PillFont = new("Microsoft YaHei UI", 8.25F, FontStyle.Regular);
+
+    private bool _hover, _previewHover, _previewPressed;
+
+    public int Index { get; init; }
+    public string Title { get; set; } = "";
+    public string Detail { get; set; } = "";
+
+    private bool _selected;
+    public bool IsSelected
+    {
+        get => _selected;
+        set { if (_selected != value) { _selected = value; Invalidate(); } }
+    }
+
+    public event EventHandler? SelectRequested;
+    public event EventHandler? PreviewRequested;
+
+    public TrackRow()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+                 ControlStyles.SupportsTransparentBackColor | ControlStyles.Selectable, true);
+        BackColor = Color.Transparent;
+        Cursor = Cursors.Hand;
+        Font = Theme.FontUI;
+    }
+
+    private float K => Height / 46f;
+
+    private Rectangle PreviewRect
+    {
+        get
+        {
+            float k = K;
+            int w = (int)(78 * k), h = (int)(28 * k);
+            return new Rectangle(Width - (int)(12 * k) - w, (Height - h) / 2, w, h);
+        }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaintBackground(e);
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        float k = K;
+        var r = new Rectangle(0, 0, Math.Max(1, Width - 1), Math.Max(1, Height - 1));
+        using var path = ModernButton.RoundRect(r, (int)(9 * k));
+
+        Color fill = _selected
+            ? (Theme.IsDark ? Color.FromArgb(38, 44, 58) : Color.FromArgb(238, 244, 255))
+            : _hover ? Theme.CardAlt : Color.Transparent;
+        if (fill.A > 0)
+        {
+            using var b = new SolidBrush(fill);
+            g.FillPath(b, path);
+        }
+        if (_selected)
+        {
+            var bar = new Rectangle((int)(2 * k), (int)(7 * k), Math.Max(2, (int)(3 * k)), Height - (int)(14 * k));
+            using var bb = new SolidBrush(Theme.Accent);
+            using var bp = ModernButton.RoundRect(bar, Math.Max(1, (int)(2 * k)));
+            g.FillPath(bb, bp);
+            using var pen = new Pen(Color.FromArgb(110, Theme.Accent), 1);
+            g.DrawPath(pen, path);
+        }
+
+        int padLeft = (int)(18 * k);
+        int textW = Math.Max(10, PreviewRect.Left - padLeft - (int)(10 * k));
+        int titleY = Height / 2 - (int)(16 * k);
+        var flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+        TextRenderer.DrawText(g, Title, TitleFont, new Rectangle(padLeft, titleY, textW, (int)(18 * k)),
+            Theme.TextPrimary, flags);
+        TextRenderer.DrawText(g, Detail, DetailFont,
+            new Rectangle(padLeft, titleY + (int)(19 * k), textW, (int)(16 * k)), Theme.TextMuted, flags);
+
+        var pr = PreviewRect;
+        Color pbg = _previewPressed ? Theme.CardAlt
+            : _previewHover ? (Theme.IsDark ? Color.FromArgb(50, 50, 60) : Color.FromArgb(228, 233, 242))
+            : Color.Transparent;
+        using (var pp = ModernButton.RoundRect(pr, pr.Height / 2))
+        {
+            if (pbg.A > 0)
+            {
+                using var pb = new SolidBrush(pbg);
+                g.FillPath(pb, pp);
+            }
+            using var pen = new Pen(Theme.Border, 1);
+            g.DrawPath(pen, pp);
+        }
+        TextRenderer.DrawText(g, "预览", PillFont, pr,
+            _previewHover ? Theme.TextPrimary : Theme.TextSecondary,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+            TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        bool overPreview = PreviewRect.Contains(e.Location);
+        if (overPreview != _previewHover)
+        {
+            _previewHover = overPreview;
+            Invalidate();
+        }
+        Cursor = Cursors.Hand;
+        base.OnMouseMove(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        _hover = false;
+        _previewHover = false;
+        _previewPressed = false;
+        Invalidate();
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left && PreviewRect.Contains(e.Location))
+        {
+            _previewPressed = true;
+            Invalidate();
+        }
+        base.OnMouseDown(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left)
+        {
+            if (_previewPressed)
+            {
+                _previewPressed = false;
+                Invalidate();
+                if (PreviewRect.Contains(e.Location)) PreviewRequested?.Invoke(this, EventArgs.Empty);
+            }
+            else if (ClientRectangle.Contains(e.Location))
+            {
+                SelectRequested?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        base.OnMouseUp(e);
+    }
+}
+
+/// <summary>
+/// 纵向滚动容器：隐藏系统滚动条，改为右侧自绘的现代圆角滚动条（支持滚轮、拖动滑块、点轨道翻页）。
+/// </summary>
+public class ModernScrollPanel : Panel
+{
+    private readonly List<Control> _items = new();
+    private int _offset;
+    private int _rowHeight = 46;
+    private int _gap = 6;
+    private bool _thumbHover, _thumbDragging;
+    private int _dragGrab;
+
+    private const int BarMargin = 3;
+    private const int Gutter = 14;
+
+    // 悬停/拖动时滑块略微变宽，配合低对比轨道形成现代滚动条观感
+    private int BarWidth => _thumbHover || _thumbDragging ? 8 : 5;
+
+    public int RowHeight
+    {
+        get => _rowHeight;
+        set { _rowHeight = Math.Max(1, value); Relayout(); }
+    }
+
+    public int Gap
+    {
+        get => _gap;
+        set { _gap = Math.Max(0, value); Relayout(); }
+    }
+
+    public bool CanScroll => MaxOffset > 0;
+
+    public ModernScrollPanel()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        BackColor = Color.Transparent;
+    }
+
+    private int ContentHeight => _items.Count == 0 ? 0 : _items.Count * (_rowHeight + _gap) - _gap;
+    private int MaxOffset => Math.Max(0, ContentHeight - ClientSize.Height);
+
+    public void ClearRows()
+    {
+        foreach (var c in _items)
+        {
+            Controls.Remove(c);
+            c.Dispose();
+        }
+        _items.Clear();
+        _offset = 0;
+        Invalidate();
+    }
+
+    public void AddRow(Control row)
+    {
+        _items.Add(row);
+        Controls.Add(row);
+        Relayout();
+    }
+
+    public void ScrollBy(int delta)
+    {
+        if (MaxOffset <= 0) return;
+        ScrollTo(_offset + delta);
+    }
+
+    public void ScrollTo(int offset)
+    {
+        offset = Math.Clamp(offset, 0, MaxOffset);
+        if (offset == _offset) return;
+        _offset = offset;
+        Relayout();
+        Invalidate();
+    }
+
+    /// <summary>滚动到列表末尾（新增行后自动露出最新内容）。</summary>
+    public void ScrollToEnd() => ScrollTo(MaxOffset);
+
+    private void Relayout()
+    {
+        int y = 0;
+        foreach (var c in _items)
+        {
+            c.SetBounds(0, y - _offset, Math.Max(0, ClientSize.Width - Gutter), _rowHeight);
+            y += _rowHeight + _gap;
+        }
+        _offset = Math.Clamp(_offset, 0, MaxOffset);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        Relayout();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaintBackground(e);
+        if (MaxOffset <= 0 && !_thumbHover) return;
+
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        var track = TrackRect;
+        using (var tp = ModernButton.RoundRect(track, track.Width / 2))
+        using (var tb = new SolidBrush(Theme.IsDark ? Color.FromArgb(28, 30, 36) : Color.FromArgb(233, 236, 242)))
+            g.FillPath(tb, tp);
+
+        var thumb = ThumbRect(track);
+        using var thp = ModernButton.RoundRect(thumb, thumb.Width / 2);
+        using var thb = new SolidBrush(
+            _thumbDragging ? Theme.AccentHover
+            : _thumbHover ? Color.FromArgb(190, Theme.Accent)
+            : Theme.IsDark ? Color.FromArgb(78, 84, 98) : Color.FromArgb(186, 192, 206));
+        g.FillPath(thb, thp);
+    }
+
+    private Rectangle TrackRect
+    {
+        get
+        {
+            int x = Math.Max(0, ClientSize.Width - BarWidth - BarMargin);
+            return new Rectangle(x, BarMargin, BarWidth, Math.Max(10, ClientSize.Height - BarMargin * 2));
+        }
+    }
+
+    private Rectangle ThumbRect(Rectangle track)
+    {
+        int content = Math.Max(1, ContentHeight);
+        int view = Math.Max(1, ClientSize.Height);
+        int th = view >= content ? track.Height : Math.Max(28, (int)((long)track.Height * view / content));
+        int range = track.Height - th;
+        int y = track.Top + (MaxOffset <= 0 ? 0 : (int)((long)_offset * range / MaxOffset));
+        return new Rectangle(track.X, y, track.Width, th);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left && MaxOffset > 0)
+        {
+            var track = TrackRect;
+            var thumb = ThumbRect(track);
+            if (thumb.Contains(e.Location))
+            {
+                _thumbDragging = true;
+                _dragGrab = e.Y - thumb.Top;
+                Capture = true;
+            }
+            else if (track.Contains(e.Location))
+            {
+                ScrollTo(e.Y < thumb.Top ? _offset - ClientSize.Height : _offset + ClientSize.Height);
+            }
+        }
+        base.OnMouseDown(e);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        if (_thumbDragging && MaxOffset > 0)
+        {
+            var track = TrackRect;
+            var thumb = ThumbRect(track);
+            int range = track.Height - thumb.Height;
+            if (range > 0)
+            {
+                double ratio = (double)(e.Y - _dragGrab - track.Top) / range;
+                ScrollTo((int)Math.Round(Math.Clamp(ratio, 0, 1) * MaxOffset));
+            }
+        }
+        else
+        {
+            bool over = MaxOffset > 0 && ThumbRect(TrackRect).Contains(e.Location);
+            if (over != _thumbHover)
+            {
+                _thumbHover = over;
+                Invalidate();
+            }
+            Cursor = over ? Cursors.Hand : Cursors.Default;
+        }
+        base.OnMouseMove(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        _thumbDragging = false;
+        Capture = false;
+        Invalidate();
+        base.OnMouseUp(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        if (!_thumbDragging)
+        {
+            _thumbHover = false;
+            Invalidate();
+        }
+        base.OnMouseLeave(e);
+    }
+}
+
+/// <summary>
+/// 现代化下拉菜单：无边框圆角卡片 + 系统投影，图标与文字共用同一行高并垂直居中；
+/// 悬停时整行显示圆角高亮并把图标点亮为主题色，配色与字体完全跟随 Theme。
+/// </summary>
+public sealed class ModernMenu : Form
+{
+    private sealed class Item
+    {
+        public required string Text { get; init; }
+        public required string Glyph { get; init; }
+        public required Action Click { get; init; }
+        public Rectangle Rect;
+    }
+
+    private readonly List<Item> _items = new();
+    private int _hover = -1;
+    private int _active = -1;        // 键盘高亮行
+    private float _scale = 1f;
+    private long _lastHideTick = -1000;
+
+    public ModernMenu()
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        AutoScaleMode = AutoScaleMode.None;
+        DoubleBuffered = true;
+        KeyPreview = true;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+    }
+
+    public void Add(string text, string glyph, Action click)
+        => _items.Add(new Item { Text = text, Glyph = glyph, Click = click });
+
+    // 系统投影 + 工具窗口（不进入 Alt-Tab / 任务栏）
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ClassStyle |= 0x00020000;
+            cp.ExStyle |= 0x00000080;
+            return cp;
+        }
+    }
+
+    /// <summary>在指定控件下方弹出菜单；再次点击同一控件则收起。</summary>
+    public void ShowAt(Control anchor)
+    {
+        if (Visible) { HideMenu(); return; }
+        // 刚因“点击外部”收起时，同一次点击不应立刻再次弹出
+        if (Environment.TickCount64 - _lastHideTick < 200) return;
+
+        _scale = Math.Max(1f, anchor.DeviceDpi / 96f);
+        int pad = Scale(6), rowH = Scale(36);
+        int iconSize = Scale(18), gap = Scale(10), lead = Scale(10);
+
+        int textW = 0;
+        foreach (var it in _items)
+            textW = Math.Max(textW, TextRenderer.MeasureText(it.Text, Theme.FontUI, Size.Empty,
+                TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width);
+
+        int width = pad * 2 + lead + iconSize + gap + textW + Scale(12);
+        int height = pad * 2 + rowH * _items.Count;
+        ClientSize = new Size(width, height);
+        BackColor = Theme.Window;   // 与主窗口背景统一
+
+        for (int i = 0; i < _items.Count; i++)
+            _items[i].Rect = new Rectangle(pad, pad + rowH * i, width - pad * 2, rowH);
+
+        UpdateRegion();
+
+        var below = anchor.PointToScreen(new Point(0, anchor.Height + Scale(6)));
+        var wa = Screen.FromControl(anchor).WorkingArea;
+        int x = Math.Min(below.X, wa.Right - Width - Scale(4));
+        int y = below.Y;
+        if (y + Height > wa.Bottom - Scale(4))
+            y = anchor.PointToScreen(Point.Empty).Y - Height - Scale(6);   // 下方空间不足时翻到上方
+
+        Location = new Point(Math.Max(wa.Left + Scale(4), x), Math.Max(wa.Top + Scale(4), y));
+        _hover = _active = -1;
+        Show(anchor.FindForm());
+        Activate();
+        Invalidate();
+    }
+
+    private void HideMenu()
+    {
+        _lastHideTick = Environment.TickCount64;
+        Hide();
+    }
+
+    protected override void OnDeactivate(EventArgs e)
+    {
+        base.OnDeactivate(e);
+        if (Visible) HideMenu();
+    }
+
+    private int Scale(int v) => (int)Math.Round(v * _scale);
+
+    private void UpdateRegion()
+    {
+        if (Width <= 0 || Height <= 0) return;
+        using var path = RoundedPath(new RectangleF(0, 0, Width, Height), Scale(10));
+        var old = Region;
+        Region = new Region(path);
+        old?.Dispose();
+    }
+
+    internal static GraphicsPath RoundedPath(RectangleF r, float radius)
+    {
+        var p = new GraphicsPath();
+        float d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+        p.AddArc(r.X, r.Y, d, d, 180, 90);
+        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        var border = new RectangleF(0.5f * _scale, 0.5f * _scale,
+            Width - 1f * _scale, Height - 1f * _scale);
+        using (var bgPath = RoundedPath(border, Scale(10)))
+        {
+            using var bg = new SolidBrush(Theme.Window);
+            g.FillPath(bg, bgPath);
+            using var pen = new Pen(Theme.Border, 1f * _scale);
+            g.DrawPath(pen, bgPath);
+        }
+
+        int pad = Scale(6);
+        int iconX = pad + Scale(10);
+        int iconSize = Scale(18);
+        int textX = iconX + iconSize + Scale(10);
+        using var iconFont = new Font("Segoe MDL2 Assets", Scale(14), FontStyle.Regular, GraphicsUnit.Pixel);
+
+        for (int i = 0; i < _items.Count; i++)
+        {
+            var it = _items[i];
+            bool hot = i == _hover || i == _active;
+
+            if (hot)
+            {
+                var hi = new Rectangle(it.Rect.X + Scale(4), it.Rect.Y + Scale(3),
+                    it.Rect.Width - Scale(8), it.Rect.Height - Scale(6));
+                using var hp = RoundedPath(hi, Scale(7));
+                using var hb = new SolidBrush(Theme.AccentSoft);
+                g.FillPath(hb, hp);
+            }
+
+            // 图标与文字都按整行垂直居中，保证两者在同一水平中线上
+            var iconRect = new Rectangle(iconX, it.Rect.Y, iconSize, it.Rect.Height);
+            TextRenderer.DrawText(g, it.Glyph, iconFont, iconRect,
+                hot ? Theme.Accent : Theme.TextSecondary,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+
+            var textRect = new Rectangle(textX, it.Rect.Y,
+                it.Rect.Right - textX - Scale(10), it.Rect.Height);
+            TextRenderer.DrawText(g, it.Text, Theme.FontUI, textRect, Theme.TextPrimary,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+        }
+    }
+
+    private int HitTest(Point p)
+    {
+        for (int i = 0; i < _items.Count; i++)
+            if (_items[i].Rect.Contains(p)) return i;
+        return -1;
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        int idx = HitTest(e.Location);
+        if (idx != _hover)
+        {
+            _hover = idx;
+            _active = -1;
+            Invalidate();
+        }
+        Cursor = idx >= 0 ? Cursors.Hand : Cursors.Default;
+        base.OnMouseMove(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        if (_hover != -1) { _hover = -1; Invalidate(); }
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left)
+        {
+            int idx = HitTest(e.Location);
+            if (idx >= 0)
+            {
+                var click = _items[idx].Click;
+                HideMenu();
+                click();
+                return;
+            }
+        }
+        base.OnMouseUp(e);
+    }
+
+    protected override bool ProcessDialogKey(Keys keyData)
+    {
+        if (keyData == Keys.Escape) { HideMenu(); return true; }
+        if (_items.Count == 0) return base.ProcessDialogKey(keyData);
+        if (keyData == Keys.Down)
+        {
+            _active = (_active + 1) % _items.Count;
+            Invalidate();
+            return true;
+        }
+        if (keyData == Keys.Up)
+        {
+            _active = _active <= 0 ? _items.Count - 1 : _active - 1;
+            Invalidate();
+            return true;
+        }
+        if (keyData == Keys.Enter && _active >= 0)
+        {
+            var click = _items[_active].Click;
+            HideMenu();
+            click();
+            return true;
+        }
+        return base.ProcessDialogKey(keyData);
+    }
 }
