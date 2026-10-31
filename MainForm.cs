@@ -125,21 +125,28 @@ public class MainForm : Form
 
         int cardW = W - Sc(32);
 
-        cardPlayer.SetBounds(Sc(16), Sc(72), cardW, Sc(176));
+        cardPlayer.SetBounds(Sc(16), Sc(72), cardW, Sc(180));
         lblDuration.SetBounds(Sc(20), Sc(14), Sc(500), Sc(22));
-        track.SetBounds(Sc(20), Sc(52), cardW - Sc(40), Sc(48));
-        lblTime.SetBounds(Sc(20), Sc(114), Sc(380), Sc(28));
-        btnPlay.SetBounds(cardW - Sc(312), Sc(110), Sc(132), Sc(36));   // 设计 x=556，距卡片右缘 312
-        btnMark.SetBounds(cardW - Sc(168), Sc(110), Sc(148), Sc(36));   // 设计 x=700，距卡片右缘 168
+        track.SetBounds(Sc(20), Sc(50), cardW - Sc(40), Sc(80));   // 控件较高：上方留给拖动气泡
+        lblTime.SetBounds(Sc(20), Sc(134), Sc(380), Sc(26));
+        btnPlay.SetBounds(cardW - Sc(312), Sc(130), Sc(132), Sc(36));   // 设计 x=556，距卡片右缘 312
+        btnMark.SetBounds(cardW - Sc(168), Sc(130), Sc(148), Sc(36));   // 设计 x=700，距卡片右缘 168
 
-        cardExport.SetBounds(Sc(16), Sc(260), cardW, Sc(160));
+        // 状态文字：上下各 16px 对称留白；cardExport 高度随窗口拉伸自适应
+        int statusH = Sc(18);
+        int statusMargin = Sc(16);
+        int cardTop = Sc(264);
+        int cardH = Math.Max(Sc(160), H - cardTop - statusMargin - statusH - statusMargin);
+        cardExport.SetBounds(Sc(16), cardTop, cardW, cardH);
         lblMark.SetBounds(Sc(20), Sc(20), cardW - Sc(40), Sc(22));
         lblHint.SetBounds(Sc(20), Sc(50), cardW - Sc(40), Sc(20));
-        btnClear.SetBounds(Sc(20), Sc(100), Sc(118), Sc(36));
-        btnPreview.SetBounds(cardW - Sc(328), Sc(100), Sc(148), Sc(36)); // 设计 x=540，距卡片右缘 328
-        btnExport.SetBounds(cardW - Sc(168), Sc(100), Sc(148), Sc(36));  // 设计 x=700，距卡片右缘 168
+        // 按钮行贴卡片底部，中间留白随卡片高度伸缩
+        int btnY = cardH - Sc(8) - Sc(36);
+        btnClear.SetBounds(Sc(20), btnY, Sc(118), Sc(36));
+        btnPreview.SetBounds(cardW - Sc(328), btnY, Sc(148), Sc(36)); // 设计 x=540，距卡片右缘 328
+        btnExport.SetBounds(cardW - Sc(168), btnY, Sc(148), Sc(36));  // 设计 x=700，距卡片右缘 168
 
-        lblStatus.SetBounds(Sc(20), H - Sc(44), Math.Max(Sc(60), W - Sc(40)), Sc(20));
+        lblStatus.SetBounds(Sc(20), H - statusMargin - statusH, Math.Max(Sc(60), W - Sc(40)), statusH);
 
         ResumeLayout(true);
     }

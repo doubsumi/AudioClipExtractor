@@ -212,11 +212,11 @@ public class ModernTrackBar : Control
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
                  ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
-        Height = 48;
+        Height = 80; // 轨道靠下，上方留出拖动气泡 / 标记把手的空间
         Cursor = Cursors.Hand;
     }
 
-    private Rectangle TrackRect => new Rectangle(12, Height / 2 - 4, Width - 24, 8);
+    private Rectangle TrackRect => new Rectangle(12, Height - 22, Width - 24, 8);
 
     private int ValueToX(int v)
     {
@@ -272,7 +272,8 @@ public class ModernTrackBar : Control
 
         // 手柄
         int hr = (_dragPart == DragPart.Value || _hover) ? 8 : 6;
-        var handle = new Rectangle(vx - hr, Height / 2 - hr, hr * 2, hr * 2);
+        int cy = t.Top + t.Height / 2;
+        var handle = new Rectangle(vx - hr, cy - hr, hr * 2, hr * 2);
         using (var hb = new SolidBrush(Theme.Card)) g.FillEllipse(hb, handle);
         using (var hp = new Pen(Theme.Accent, 2)) g.DrawEllipse(hp, handle);
 
@@ -284,7 +285,7 @@ public class ModernTrackBar : Control
             int bw = size.Width + 16;
             int bh = size.Height + 8;
             int bx = Math.Clamp(vx - bw / 2, 0, Width - bw);
-            int by = t.Top - bh - 6;
+            int by = t.Top - bh - 20; // 留出标记把手的空间，避免气泡压住把手
             var bubble = new Rectangle(bx, by, bw, bh);
             using var bp = ModernButton.RoundRect(bubble, 6);
             using var bb = new SolidBrush(Theme.TextPrimary);
