@@ -170,14 +170,14 @@ public class MainForm : Form
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
         // --- 顶部工具条 ---
-        btnBrowse.Text = "选择视频";
+        btnBrowse.Text = "选择文件";
         btnBrowse.Style = ModernButtonStyle.Primary;
         btnBrowse.IconGlyph = "\uE8B7";
         btnBrowse.Click += (_, _) => BrowseVideo();
 
         lblFile.AutoEllipsis = true;
         lblFile.AutoSize = false;
-        lblFile.Text = "未选择视频（可拖拽文件到窗口）";
+        lblFile.Text = "未选择文件（可拖拽文件到窗口）";
         lblFile.Font = Theme.FontUI;
         lblFile.BackColor = Color.Transparent;
 
@@ -302,13 +302,16 @@ public class MainForm : Form
         Invalidate(true);
     }
 
-    // ===== 选视频 =====
+    // ===== 选文件（视频或音频） =====
     private void BrowseVideo()
     {
         using var ofd = new OpenFileDialog
         {
-            Title = "选择视频文件",
-            Filter = "视频文件|*.mp4;*.mov;*.mkv;*.avi;*.wmv;*.flv;*.webm;*.m4v;*.ts|所有文件|*.*",
+            Title = "选择视频或音频文件",
+            Filter = "媒体文件|*.mp4;*.mov;*.mkv;*.avi;*.wmv;*.flv;*.webm;*.m4v;*.ts;*.mp3;*.wav;*.m4a;*.aac;*.flac;*.ogg;*.opus;*.wma" +
+                     "|视频文件|*.mp4;*.mov;*.mkv;*.avi;*.wmv;*.flv;*.webm;*.m4v;*.ts" +
+                     "|音频文件|*.mp3;*.wav;*.m4a;*.aac;*.flac;*.ogg;*.opus;*.wma" +
+                     "|所有文件|*.*",
             CheckFileExists = true
         };
         if (ofd.ShowDialog(this) != DialogResult.OK) return;
@@ -349,12 +352,12 @@ public class MainForm : Form
         {
             CloseMedia();
             videoPath = null;
-            lblFile.Text = "未选择视频（可拖拽文件到窗口）";
+            lblFile.Text = "未选择文件（可拖拽文件到窗口）";
             totalMs = 0;
             SetPlaybackEnabled(false);
             MessageBox.Show(this,
-                "无法加载该视频的音轨：\r\n" + ex.Message +
-                "\r\n\r\n如果视频本身没有音轨，或系统缺少对应解码器，请换个文件试试。",
+                "无法加载该文件的音频：\r\n" + ex.Message +
+                "\r\n\r\n如果文件本身没有音轨，或系统缺少对应解码器，请换个文件试试。",
                 "加载失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
@@ -598,7 +601,7 @@ public class MainForm : Form
     // ===== 导出（使用 Windows 自带的 Media Foundation 解码，无需 ffmpeg） =====
     private async void btnExport_Click(object? sender, EventArgs e)
     {
-        if (videoPath == null) { MessageBox.Show(this, "请先选择视频文件。"); return; }
+        if (videoPath == null) { MessageBox.Show(this, "请先选择视频或音频文件。"); return; }
         if (!markStartMs.HasValue || !markEndMs.HasValue)
         { MessageBox.Show(this, "请先标记起点和终点。"); return; }
 
